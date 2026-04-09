@@ -1,0 +1,31 @@
+# Build outputs
+*.o
+*.elf
+*.hex
+*.bin
+*.map
+
+# Windows app build outputs
+windows app/source/repos/*/bin/
+windows app/source/repos/*/obj/
+*.exe
+*.dll
+*.pdb
+*.cache
+*.suo
+*.user
+*.vs/
+
+# IDE metadata
+.idea/
+.vs/
+*.sln.docstates
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Large binaries / installers (available online)
+*.setup.exe
+*.zip
