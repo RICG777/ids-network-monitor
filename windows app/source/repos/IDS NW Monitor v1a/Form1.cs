@@ -16,8 +16,10 @@ namespace IDS_NW_Monitor_v1a
     public partial class Form1 : Form
     {
         private SerialPort serialPort;
-        private const string BUILD_VERSION = "0.5.0";
-        private const string EXPECTED_FW_VERSION = "1d.1";
+        private const string BUILD_VERSION = "0.6.0";
+        private const string EXPECTED_FW_VERSION = "1d.2";
+        private bool suppressModeEvents = false;
+        private static readonly int[] DurationValues = { 5, 10, 15, 30, 60, 120 };
         private bool isConnected = false;
         private StreamWriter logWriter = null;
         private string logFilePath = null;
@@ -73,6 +75,7 @@ namespace IDS_NW_Monitor_v1a
             isConnected = connected;
 
             grpNetwork.Enabled = connected;
+            grpBoardInfo.Enabled = connected;
             grpRelay1.Enabled = connected;
             grpRelay2.Enabled = connected;
 
@@ -90,6 +93,7 @@ namespace IDS_NW_Monitor_v1a
                 statusConnection.BackColor = Color.FromArgb(180, 0, 0);
                 statusCOMPort.Text = "";
                 statusBoardIP.Text = "";
+                lblMACValue.Text = "\u2014";
                 SetRelayIndicator(1, false);
                 SetRelayIndicator(2, false);
             }
@@ -336,6 +340,78 @@ namespace IDS_NW_Monitor_v1a
         }
 
         // =====================
+        // RELAY MODE & DURATION
+        // =====================
+
+        private void cmbMode1_Changed(object sender, EventArgs e)
+        {
+            if (!isConnected || suppressModeEvents) return;
+            string mode = cmbMode1.SelectedIndex == 1 ? "LATCH" : "PULSE";
+            serialPort.Write("MODE1:" + mode + "\n");
+            LogDebug("Sent: MODE1:" + mode);
+        }
+
+        private void cmbMode2_Changed(object sender, EventArgs e)
+        {
+            if (!isConnected || suppressModeEvents) return;
+            string mode = cmbMode2.SelectedIndex == 1 ? "LATCH" : "PULSE";
+            serialPort.Write("MODE2:" + mode + "\n");
+            LogDebug("Sent: MODE2:" + mode);
+        }
+
+        private void cmbDuration1_Changed(object sender, EventArgs e)
+        {
+            if (!isConnected || suppressModeEvents) return;
+            int dur = DurationValues[cmbDuration1.SelectedIndex];
+            serialPort.Write("DURATION1:" + dur + "\n");
+            LogDebug("Sent: DURATION1:" + dur);
+        }
+
+        private void cmbDuration2_Changed(object sender, EventArgs e)
+        {
+            if (!isConnected || suppressModeEvents) return;
+            int dur = DurationValues[cmbDuration2.SelectedIndex];
+            serialPort.Write("DURATION2:" + dur + "\n");
+            LogDebug("Sent: DURATION2:" + dur);
+        }
+
+        // =====================
+        // RELAY RESET
+        // =====================
+
+        private void btnResetRelay1_Click(object sender, EventArgs e)
+        {
+            if (!isConnected) return;
+            serialPort.Write("RESET1\n");
+            LogDebug("Sent: RESET1");
+        }
+
+        private void btnResetRelay2_Click(object sender, EventArgs e)
+        {
+            if (!isConnected) return;
+            serialPort.Write("RESET2\n");
+            LogDebug("Sent: RESET2");
+        }
+
+        // =====================
+        // DURATION HELPER
+        // =====================
+
+        private void SelectDuration(ComboBox cmb, int seconds)
+        {
+            for (int i = 0; i < DurationValues.Length; i++)
+            {
+                if (DurationValues[i] == seconds)
+                {
+                    cmb.SelectedIndex = i;
+                    return;
+                }
+            }
+            // If not an exact match, find closest
+            cmb.SelectedIndex = 1; // default to 10s
+        }
+
+        // =====================
         // ABOUT DIALOG
         // =====================
 
@@ -386,6 +462,61 @@ namespace IDS_NW_Monitor_v1a
                             }
                         }));
                         LogDebug("Firmware version: " + fw);
+                    }
+                    else if (line.StartsWith("ArdSTATUS:MAC:"))
+                    {
+                        string mac = line.Substring("ArdSTATUS:MAC:".Length);
+                        this.Invoke(new Action(() => {
+                            lblMACValue.Text = mac;
+                            grpBoardInfo.Enabled = true;
+                        }));
+                        LogDebug("Board MAC: " + mac);
+                    }
+                    else if (line.StartsWith("ArdSTATUS:R1Mode:"))
+                    {
+                        string mode = line.Substring("ArdSTATUS:R1Mode:".Length);
+                        this.Invoke(new Action(() => {
+                            suppressModeEvents = true;
+                            cmbMode1.SelectedIndex = mode == "LATCH" ? 1 : 0;
+                            suppressModeEvents = false;
+                        }));
+                        LogDebug("Relay 1 mode: " + mode);
+                    }
+                    else if (line.StartsWith("ArdSTATUS:R2Mode:"))
+                    {
+                        string mode = line.Substring("ArdSTATUS:R2Mode:".Length);
+                        this.Invoke(new Action(() => {
+                            suppressModeEvents = true;
+                            cmbMode2.SelectedIndex = mode == "LATCH" ? 1 : 0;
+                            suppressModeEvents = false;
+                        }));
+                        LogDebug("Relay 2 mode: " + mode);
+                    }
+                    else if (line.StartsWith("ArdSTATUS:R1Duration:"))
+                    {
+                        int dur;
+                        if (int.TryParse(line.Substring("ArdSTATUS:R1Duration:".Length), out dur))
+                        {
+                            this.Invoke(new Action(() => {
+                                suppressModeEvents = true;
+                                SelectDuration(cmbDuration1, dur);
+                                suppressModeEvents = false;
+                            }));
+                            LogDebug("Relay 1 duration: " + dur + "s");
+                        }
+                    }
+                    else if (line.StartsWith("ArdSTATUS:R2Duration:"))
+                    {
+                        int dur;
+                        if (int.TryParse(line.Substring("ArdSTATUS:R2Duration:".Length), out dur))
+                        {
+                            this.Invoke(new Action(() => {
+                                suppressModeEvents = true;
+                                SelectDuration(cmbDuration2, dur);
+                                suppressModeEvents = false;
+                            }));
+                            LogDebug("Relay 2 duration: " + dur + "s");
+                        }
                     }
                     else if (line.StartsWith("ArdSTATUS:IP:"))
                     {
@@ -451,6 +582,16 @@ namespace IDS_NW_Monitor_v1a
                             }));
                         }
                         LogDebug(line);
+                    }
+                    else if (line.StartsWith("ArdACK:RESET1:"))
+                    {
+                        this.Invoke(new Action(() => { SetRelayIndicator(1, false); }));
+                        LogDebug("Relay 1 reset confirmed.");
+                    }
+                    else if (line.StartsWith("ArdACK:RESET2:"))
+                    {
+                        this.Invoke(new Action(() => { SetRelayIndicator(2, false); }));
+                        LogDebug("Relay 2 reset confirmed.");
                     }
                     else if (line.StartsWith("ArdACK:"))
                     {

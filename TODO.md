@@ -46,7 +46,8 @@ _None_
 | C6 | Configurable pulse duration | Per-relay: 5s/10s/30s/60s, stored in EEPROM | High |
 | C7 | Manual relay reset command | Serial command to de-energize a latched relay | High |
 | C9 | Multiple triggers per relay | 2-3 triggers per relay within EEPROM budget | Medium |
-| C10 | Configurable MAC address | Store in EEPROM, avoid conflicts with multiple units | Medium |
+| C10 | ~~Configurable MAC address~~ | PARKED — wait for ESP32 boards to confirm unique MACs. Config should be manufacture-only, not user-facing | — |
+| C10a | Read-only MAC address display | Report MAC in STATUS response for commissioning/O&M documentation | High |
 | C11 | Subnet mask / gateway config | Full network config, not just IP | Medium |
 | C12 | Debug log output control | Option to reduce serial debug verbosity | Low |
 
@@ -58,7 +59,8 @@ _None_
 | W3 | Manual relay reset buttons | "Reset" button per relay | C7 | High |
 | W4 | Live relay status polling | Periodic STATUS poll to keep indicators current | — | Medium |
 | W5 | Multiple triggers per relay | Add/remove list UI per relay | C9 | Medium |
-| W6 | MAC address configuration | Field + send to board | C10 | Medium |
+| W6 | ~~MAC address configuration~~ | PARKED — manufacture-only function, not user-facing | — | — |
+| W6a | Read-only MAC address display | Show MAC on Connection tab for commissioning/O&M | C10a | High |
 | W7 | Subnet mask / gateway fields | UI is in place, firmware needs support | C11 | Medium |
 | W8 | Log to file | Auto-save event log to timestamped text file | — | High |
 
