@@ -1,6 +1,6 @@
 // IDS Network Monitor - Syslog Relay Trigger
-// Version: 1d
-// Changes from v1c:
+// Version: 1d.1
+// Changes from v1d:
 //   - FIX: triggerMessage arrays sized to 80 bytes (was sized to initializer, causing truncation)
 //   - FIX: packetBuffer reduced 512 -> 256 bytes (frees SRAM, syslog triggers are short)
 //   - FIX: String() objects replaced with F() macro + Serial.print() (prevents heap fragmentation)
@@ -21,6 +21,8 @@
 #define FIRST_BOOT_MARKER_ADDR 200
 #define FIRST_BOOT_MARKER_VALUE 123
 #define MAX_TRIGGER_LEN 80
+#define FIRMWARE_VERSION "1d.1"
+#define TEST_PULSE_MS 3000
 
 // VARIABLES SECTION
 byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
@@ -209,6 +211,8 @@ void loop() {
                 Serial.println(triggerMessage2);
             }
         } else if (strncmp(message, "STATUS", 6) == 0) {
+            Serial.print(F("ArdSTATUS:FW:"));
+            Serial.println(F(FIRMWARE_VERSION));
             Serial.print(F("ArdSTATUS:IP:"));
             Serial.println(Ethernet.localIP());
             Serial.print(F("ArdSTATUS:Relay1:"));
@@ -219,6 +223,18 @@ void loop() {
             Serial.println(relay1IsOn ? "ON" : "OFF");
             Serial.print(F("ArdSTATUS:R2State:"));
             Serial.println(relay2IsOn ? "ON" : "OFF");
+        } else if (strncmp(message, "TEST1", 5) == 0) {
+            Serial.println(F("ArdACK:TEST1:pulsing 3s"));
+            digitalWrite(relayPin1, HIGH);
+            delay(TEST_PULSE_MS);
+            digitalWrite(relayPin1, LOW);
+            Serial.println(F("ArdMsg: Relay 1 test complete."));
+        } else if (strncmp(message, "TEST2", 5) == 0) {
+            Serial.println(F("ArdACK:TEST2:pulsing 3s"));
+            digitalWrite(relayPin2, HIGH);
+            delay(TEST_PULSE_MS);
+            digitalWrite(relayPin2, LOW);
+            Serial.println(F("ArdMsg: Relay 2 test complete."));
         }
     }
 
