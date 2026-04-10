@@ -211,7 +211,7 @@
             this.Controls.Add(this.textBoxTrigger);
             this.Controls.Add(this.label1);
             this.Name = "Form1";
-            this.Text = "Form1";
+            this.Text = "IDS Network Monitor";
             this.ResumeLayout(false);
             this.PerformLayout();
 

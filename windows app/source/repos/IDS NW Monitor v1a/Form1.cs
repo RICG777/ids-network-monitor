@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -14,85 +14,167 @@ namespace IDS_NW_Monitor_v1a
 {
     public partial class Form1 : Form
     {
-        // Declare the SerialPort object at the class level
         private SerialPort serialPort;
 
-        private const string BUILD_VERSION = "0.2.1";  // Update this value for each new build
-
-
+        private const string BUILD_VERSION = "0.3.0";  // v0.3.0 — bug fixes, ACK protocol, settings persistence
 
         public Form1()
         {
             InitializeComponent();
-            // Initialize the SerialPort object
+
+            // Populate COM ports
             cmbCOMPorts.Items.AddRange(SerialPort.GetPortNames());
-            if (cmbCOMPorts.Items.Count > 0)
+
+            // Restore saved settings
+            var settings = Properties.Settings.Default;
+
+            // Select saved COM port if available, otherwise first port
+            if (!string.IsNullOrEmpty(settings.COMPort) && cmbCOMPorts.Items.Contains(settings.COMPort))
             {
-                cmbCOMPorts.SelectedIndex = 0; // Select the first COM port by default
+                cmbCOMPorts.SelectedItem = settings.COMPort;
+            }
+            else if (cmbCOMPorts.Items.Count > 0)
+            {
+                cmbCOMPorts.SelectedIndex = 0;
             }
 
-            serialPort = new SerialPort(cmbCOMPorts.SelectedItem.ToString(), 9600);
-            serialPort.DataReceived += serialPort_DataReceived; // Attach the event handler
+            // Restore saved field values
+            if (!string.IsNullOrEmpty(settings.IPAddress))
+                txtIPAddress.Text = settings.IPAddress;
+            if (!string.IsNullOrEmpty(settings.Trigger1))
+                textBoxTrigger.Text = settings.Trigger1;
+            if (!string.IsNullOrEmpty(settings.Trigger2))
+                textBoxTrigger2.Text = settings.Trigger2;
+
+            // Initialize serial port (only if a port is available)
+            if (cmbCOMPorts.SelectedItem != null)
+            {
+                serialPort = new SerialPort(cmbCOMPorts.SelectedItem.ToString(), 9600);
+            }
+            else
+            {
+                serialPort = new SerialPort();
+            }
+            serialPort.DataReceived += serialPort_DataReceived;
+
             buildVersion.Text = "Build Version: " + BUILD_VERSION;
+        }
+
+        private void LogDebug(string message)
+        {
+            string timestamped = "[" + DateTime.Now.ToString("HH:mm:ss") + "] " + message + "\r\n";
+            if (txtDebug.InvokeRequired)
+            {
+                txtDebug.Invoke(new Action(() => {
+                    txtDebug.AppendText(timestamped);
+                }));
+            }
+            else
+            {
+                txtDebug.AppendText(timestamped);
+            }
         }
 
         private void btnConnect_Click(object sender, EventArgs e)
         {
             if (!serialPort.IsOpen)
             {
-
-                // Check if a COM port is selected before trying to connect
                 if (cmbCOMPorts.SelectedItem == null)
                 {
                     MessageBox.Show("Please select a COM port.");
-                    return; // Exit the method early
+                    return;
                 }
 
-                // Set the port name to the selected COM port
                 serialPort.PortName = cmbCOMPorts.SelectedItem.ToString();
 
                 try
                 {
-                    txtDebug.AppendText("Trying to open the port..."); // Debugging message
-
+                    LogDebug("Opening " + serialPort.PortName + "...");
                     serialPort.Open();
                     serialPort.DtrEnable = true;
                     serialPort.RtsEnable = true;
                     btnConnect.Text = "Disconnect";
                     lblConnectionStatus.Text = "Status: Connected";
+                    lblConnectionStatus.ForeColor = Color.Green;
+
+                    // Save COM port choice
+                    Properties.Settings.Default.COMPort = serialPort.PortName;
+                    Properties.Settings.Default.Save();
+
+                    // Request current config from board
+                    LogDebug("Requesting board status...");
+                    serialPort.Write("STATUS\n");
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show("Error connecting to the board: " + ex.Message + "\n\n" + ex.StackTrace);
+                    MessageBox.Show("Error connecting: " + ex.Message);
                     lblConnectionStatus.Text = "Status: Error";
+                    lblConnectionStatus.ForeColor = Color.Red;
                 }
             }
             else
             {
-                txtDebug.AppendText("Trying to close the port..."); // Debugging message
-
+                LogDebug("Closing " + serialPort.PortName + "...");
                 serialPort.Close();
                 btnConnect.Text = "Connect to Board";
                 lblConnectionStatus.Text = "Status: Disconnected";
+                lblConnectionStatus.ForeColor = SystemColors.ControlText;
             }
         }
 
-
         private void btnSetTrigger_Click(object sender, EventArgs e)
         {
-            txtDebug.AppendText("Set Trigger for Relay 1 button clicked.\n");
-
             if (serialPort.IsOpen)
             {
-                // Clear the buffer
-                while (serialPort.BytesToRead > 0)
+                string trigger = textBoxTrigger.Text.Trim();
+                if (string.IsNullOrEmpty(trigger))
                 {
-                    serialPort.ReadByte();
+                    MessageBox.Show("Please enter a trigger message.");
+                    return;
+                }
+                if (trigger.Length >= 80)
+                {
+                    MessageBox.Show("Trigger message must be less than 80 characters.");
+                    return;
                 }
 
-                string message = "Relay1:" + textBoxTrigger.Text + "\n";
+                string message = "Relay1:" + trigger + "\n";
                 serialPort.Write(message);
-                txtDebug.AppendText("Message sent to board for Relay1: " + message + "\n");
+                LogDebug("Sent: " + message.Trim());
+
+                // Save setting
+                Properties.Settings.Default.Trigger1 = trigger;
+                Properties.Settings.Default.Save();
+            }
+            else
+            {
+                MessageBox.Show("Please connect to the board first.");
+            }
+        }
+
+        private void btnSetTrigger2_Click(object sender, EventArgs e)
+        {
+            if (serialPort.IsOpen)
+            {
+                string trigger = textBoxTrigger2.Text.Trim();
+                if (string.IsNullOrEmpty(trigger))
+                {
+                    MessageBox.Show("Please enter a trigger message.");
+                    return;
+                }
+                if (trigger.Length >= 80)
+                {
+                    MessageBox.Show("Trigger message must be less than 80 characters.");
+                    return;
+                }
+
+                string message = "Relay2:" + trigger + "\n";
+                serialPort.Write(message);
+                LogDebug("Sent: " + message.Trim());
+
+                // Save setting
+                Properties.Settings.Default.Trigger2 = trigger;
+                Properties.Settings.Default.Save();
             }
             else
             {
@@ -104,28 +186,65 @@ namespace IDS_NW_Monitor_v1a
         {
             try
             {
-                // Clear the buffer
+                // Read all available data line by line
                 while (serialPort.BytesToRead > 0)
                 {
-                    serialPort.ReadByte();
-                }
+                    string line = serialPort.ReadLine().Trim();
+                    if (string.IsNullOrEmpty(line)) continue;
 
-                string receivedData = serialPort.ReadLine();
-                this.Invoke(new Action(() => {
-                    txtDebug.AppendText("Received from board: " + receivedData + "\n");
-                }));
+                    // Handle STATUS responses — populate fields from board
+                    if (line.StartsWith("ArdSTATUS:IP:"))
+                    {
+                        string val = line.Substring("ArdSTATUS:IP:".Length);
+                        this.Invoke(new Action(() => { txtIPAddress.Text = val; }));
+                        LogDebug("Board IP: " + val);
+                    }
+                    else if (line.StartsWith("ArdSTATUS:Relay1:"))
+                    {
+                        string val = line.Substring("ArdSTATUS:Relay1:".Length);
+                        this.Invoke(new Action(() => { textBoxTrigger.Text = val; }));
+                        LogDebug("Board Relay1 trigger: " + val);
+                    }
+                    else if (line.StartsWith("ArdSTATUS:Relay2:"))
+                    {
+                        string val = line.Substring("ArdSTATUS:Relay2:".Length);
+                        this.Invoke(new Action(() => { textBoxTrigger2.Text = val; }));
+                        LogDebug("Board Relay2 trigger: " + val);
+                    }
+                    else if (line.StartsWith("ArdSTATUS:"))
+                    {
+                        LogDebug("Board: " + line.Substring("ArdSTATUS:".Length));
+                    }
+                    else if (line.StartsWith("ArdACK:"))
+                    {
+                        LogDebug("Confirmed: " + line.Substring("ArdACK:".Length));
+                    }
+                    else if (line.StartsWith("ArdERR:"))
+                    {
+                        string err = line.Substring("ArdERR:".Length);
+                        LogDebug("ERROR from board: " + err);
+                        this.Invoke(new Action(() => {
+                            MessageBox.Show("Board error: " + err, "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        }));
+                    }
+                    else
+                    {
+                        LogDebug("Board: " + line);
+                    }
+                }
+            }
+            catch (TimeoutException)
+            {
+                // ReadLine timed out — no complete line available yet, will retry on next event
             }
             catch (Exception ex)
             {
-                this.Invoke(new Action(() => {
-                    txtDebug.AppendText("Error reading from board: " + ex.Message + "\n");
-                }));
+                LogDebug("Serial error: " + ex.Message);
             }
         }
 
         private bool IsValidIPAddress(string ip)
         {
-            // Regular expression to validate IP address format
             string pattern = @"^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$";
             return Regex.IsMatch(ip, pattern);
         }
@@ -136,9 +255,13 @@ namespace IDS_NW_Monitor_v1a
             {
                 if (serialPort.IsOpen)
                 {
-                    string newIPAddress = "IP:" + txtIPAddress.Text + "\n"; // Prefix the IP address with "IP:"
-                    serialPort.Write(newIPAddress);
-                    txtDebug.AppendText("New IP address sent to board: " + newIPAddress + "\n");
+                    string message = "IP:" + txtIPAddress.Text + "\n";
+                    serialPort.Write(message);
+                    LogDebug("Sent: " + message.Trim());
+
+                    // Save setting
+                    Properties.Settings.Default.IPAddress = txtIPAddress.Text;
+                    Properties.Settings.Default.Save();
                 }
                 else
                 {
@@ -153,35 +276,10 @@ namespace IDS_NW_Monitor_v1a
 
         private void label2_Click(object sender, EventArgs e)
         {
-
-        }
-
-        private void btnSetTrigger2_Click(object sender, EventArgs e)
-        {
-            txtDebug.AppendText("Set Trigger for Relay 2 button clicked.\n");
-
-            if (serialPort.IsOpen)
-            {
-                // Clear the buffer
-                while (serialPort.BytesToRead > 0)
-                {
-                    serialPort.ReadByte();
-                }
-
-                string message = "Relay2:" + textBoxTrigger2.Text + "\n"; // Prefix with "Relay2:"
-                serialPort.Write(message);
-                txtDebug.AppendText("Message sent to board for Relay 2: " + message + "\n");
-            }
-            else
-            {
-                MessageBox.Show("Please connect to the board first.");
-            }
         }
 
         private void buildVersion_Click(object sender, EventArgs e)
         {
-            
         }
     }
 }
-
