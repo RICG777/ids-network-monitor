@@ -327,7 +327,7 @@ namespace IDS_NW_Monitor_v1a
         {
             if (!isConnected) return;
             btnTestRelay1.Enabled = false;
-            LogDebug("Testing Relay 1 (3 second pulse)...");
+            LogDebug("Quick test Relay 1 (3s)...");
             serialPort.Write("TEST1\n");
         }
 
@@ -335,8 +335,34 @@ namespace IDS_NW_Monitor_v1a
         {
             if (!isConnected) return;
             btnTestRelay2.Enabled = false;
-            LogDebug("Testing Relay 2 (3 second pulse)...");
+            LogDebug("Quick test Relay 2 (3s)...");
             serialPort.Write("TEST2\n");
+        }
+
+        private void btnTimedTestRelay1_Click(object sender, EventArgs e)
+        {
+            if (!isConnected) return;
+            int dur = DurationValues[cmbDuration1.SelectedIndex];
+            var result = MessageBox.Show(
+                "Timed test will energize Relay 1 for " + dur + " seconds.\n\nProceed?",
+                "Timed Test", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (result != DialogResult.Yes) return;
+            btnTimedTestRelay1.Enabled = false;
+            LogDebug("Timed test Relay 1 (" + dur + "s)...");
+            serialPort.Write("TTEST1\n");
+        }
+
+        private void btnTimedTestRelay2_Click(object sender, EventArgs e)
+        {
+            if (!isConnected) return;
+            int dur = DurationValues[cmbDuration2.SelectedIndex];
+            var result = MessageBox.Show(
+                "Timed test will energize Relay 2 for " + dur + " seconds.\n\nProceed?",
+                "Timed Test", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (result != DialogResult.Yes) return;
+            btnTimedTestRelay2.Enabled = false;
+            LogDebug("Timed test Relay 2 (" + dur + "s)...");
+            serialPort.Write("TTEST2\n");
         }
 
         // =====================
@@ -555,15 +581,25 @@ namespace IDS_NW_Monitor_v1a
                     {
                         LogDebug("Board: " + line.Substring("ArdSTATUS:".Length));
                     }
+                    else if (line.StartsWith("ArdACK:TTEST1:"))
+                    {
+                        this.Invoke(new Action(() => { SetRelayIndicator(1, true); }));
+                        LogDebug("Relay 1 timed test started: " + line.Substring("ArdACK:TTEST1:".Length));
+                    }
+                    else if (line.StartsWith("ArdACK:TTEST2:"))
+                    {
+                        this.Invoke(new Action(() => { SetRelayIndicator(2, true); }));
+                        LogDebug("Relay 2 timed test started: " + line.Substring("ArdACK:TTEST2:".Length));
+                    }
                     else if (line.StartsWith("ArdACK:TEST1:"))
                     {
                         this.Invoke(new Action(() => { SetRelayIndicator(1, true); }));
-                        LogDebug("Relay 1 test pulse started.");
+                        LogDebug("Relay 1 quick test started.");
                     }
                     else if (line.StartsWith("ArdACK:TEST2:"))
                     {
                         this.Invoke(new Action(() => { SetRelayIndicator(2, true); }));
-                        LogDebug("Relay 2 test pulse started.");
+                        LogDebug("Relay 2 quick test started.");
                     }
                     else if (line.Contains("test complete"))
                     {
@@ -572,6 +608,7 @@ namespace IDS_NW_Monitor_v1a
                             this.Invoke(new Action(() => {
                                 SetRelayIndicator(1, false);
                                 btnTestRelay1.Enabled = true;
+                                btnTimedTestRelay1.Enabled = true;
                             }));
                         }
                         else if (line.Contains("Relay 2"))
@@ -579,6 +616,7 @@ namespace IDS_NW_Monitor_v1a
                             this.Invoke(new Action(() => {
                                 SetRelayIndicator(2, false);
                                 btnTestRelay2.Enabled = true;
+                                btnTimedTestRelay2.Enabled = true;
                             }));
                         }
                         LogDebug(line);

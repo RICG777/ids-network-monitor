@@ -337,7 +337,27 @@ void loop() {
         } else if (strncmp(message, "STATUS", 6) == 0) {
             sendStatus();
 
+        } else if (strncmp(message, "TTEST1", 6) == 0) {
+            // Timed test — uses configured duration
+            Serial.print(F("ArdACK:TTEST1:pulsing "));
+            Serial.print(relay1Duration);
+            Serial.println(F("s"));
+            digitalWrite(relayPin1, HIGH);
+            delay((unsigned long)relay1Duration * 1000UL);
+            digitalWrite(relayPin1, LOW);
+            Serial.println(F("ArdMsg: Relay 1 timed test complete."));
+
+        } else if (strncmp(message, "TTEST2", 6) == 0) {
+            Serial.print(F("ArdACK:TTEST2:pulsing "));
+            Serial.print(relay2Duration);
+            Serial.println(F("s"));
+            digitalWrite(relayPin2, HIGH);
+            delay((unsigned long)relay2Duration * 1000UL);
+            digitalWrite(relayPin2, LOW);
+            Serial.println(F("ArdMsg: Relay 2 timed test complete."));
+
         } else if (strncmp(message, "TEST1", 5) == 0) {
+            // Quick test — always 3 seconds
             Serial.println(F("ArdACK:TEST1:pulsing 3s"));
             digitalWrite(relayPin1, HIGH);
             delay(TEST_PULSE_MS);

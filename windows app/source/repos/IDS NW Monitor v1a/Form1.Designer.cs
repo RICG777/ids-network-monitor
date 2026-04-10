@@ -54,6 +54,7 @@ namespace IDS_NW_Monitor_v1a
             this.lblTrigger1Error = new System.Windows.Forms.Label();
             this.btnSetTrigger = new System.Windows.Forms.Button();
             this.btnTestRelay1 = new System.Windows.Forms.Button();
+            this.btnTimedTestRelay1 = new System.Windows.Forms.Button();
             this.btnResetRelay1 = new System.Windows.Forms.Button();
             this.lblMode1 = new System.Windows.Forms.Label();
             this.cmbMode1 = new System.Windows.Forms.ComboBox();
@@ -68,6 +69,7 @@ namespace IDS_NW_Monitor_v1a
             this.lblTrigger2Error = new System.Windows.Forms.Label();
             this.btnSetTrigger2 = new System.Windows.Forms.Button();
             this.btnTestRelay2 = new System.Windows.Forms.Button();
+            this.btnTimedTestRelay2 = new System.Windows.Forms.Button();
             this.btnResetRelay2 = new System.Windows.Forms.Button();
             this.lblMode2 = new System.Windows.Forms.Label();
             this.cmbMode2 = new System.Windows.Forms.ComboBox();
@@ -211,6 +213,7 @@ namespace IDS_NW_Monitor_v1a
             this.grpRelay1.Controls.Add(this.lblTrigger1Error);
             this.grpRelay1.Controls.Add(this.btnSetTrigger);
             this.grpRelay1.Controls.Add(this.btnTestRelay1);
+            this.grpRelay1.Controls.Add(this.btnTimedTestRelay1);
             this.grpRelay1.Controls.Add(this.btnResetRelay1);
             this.grpRelay1.Controls.Add(this.lblMode1);
             this.grpRelay1.Controls.Add(this.cmbMode1);
@@ -236,9 +239,14 @@ namespace IDS_NW_Monitor_v1a
             this.btnResetRelay1.Click += new System.EventHandler(this.btnResetRelay1_Click);
 
             this.btnTestRelay1.Location = new System.Drawing.Point(200, 20);
-            this.btnTestRelay1.Size = new System.Drawing.Size(80, 22);
-            this.btnTestRelay1.Text = "Test Relay";
+            this.btnTestRelay1.Size = new System.Drawing.Size(70, 22);
+            this.btnTestRelay1.Text = "Quick Test";
             this.btnTestRelay1.Click += new System.EventHandler(this.btnTestRelay1_Click);
+
+            this.btnTimedTestRelay1.Location = new System.Drawing.Point(200, 130);
+            this.btnTimedTestRelay1.Size = new System.Drawing.Size(100, 22);
+            this.btnTimedTestRelay1.Text = "Timed Test";
+            this.btnTimedTestRelay1.Click += new System.EventHandler(this.btnTimedTestRelay1_Click);
 
             this.lblMode1.AutoSize = true;
             this.lblMode1.Location = new System.Drawing.Point(300, 24);
@@ -289,6 +297,7 @@ namespace IDS_NW_Monitor_v1a
             this.grpRelay2.Controls.Add(this.lblTrigger2Error);
             this.grpRelay2.Controls.Add(this.btnSetTrigger2);
             this.grpRelay2.Controls.Add(this.btnTestRelay2);
+            this.grpRelay2.Controls.Add(this.btnTimedTestRelay2);
             this.grpRelay2.Controls.Add(this.btnResetRelay2);
             this.grpRelay2.Controls.Add(this.lblMode2);
             this.grpRelay2.Controls.Add(this.cmbMode2);
@@ -314,9 +323,14 @@ namespace IDS_NW_Monitor_v1a
             this.btnResetRelay2.Click += new System.EventHandler(this.btnResetRelay2_Click);
 
             this.btnTestRelay2.Location = new System.Drawing.Point(200, 20);
-            this.btnTestRelay2.Size = new System.Drawing.Size(80, 22);
-            this.btnTestRelay2.Text = "Test Relay";
+            this.btnTestRelay2.Size = new System.Drawing.Size(70, 22);
+            this.btnTestRelay2.Text = "Quick Test";
             this.btnTestRelay2.Click += new System.EventHandler(this.btnTestRelay2_Click);
+
+            this.btnTimedTestRelay2.Location = new System.Drawing.Point(200, 130);
+            this.btnTimedTestRelay2.Size = new System.Drawing.Size(100, 22);
+            this.btnTimedTestRelay2.Text = "Timed Test";
+            this.btnTimedTestRelay2.Click += new System.EventHandler(this.btnTimedTestRelay2_Click);
 
             this.lblMode2.AutoSize = true;
             this.lblMode2.Location = new System.Drawing.Point(300, 24);
@@ -458,6 +472,7 @@ namespace IDS_NW_Monitor_v1a
         private System.Windows.Forms.Label lblTrigger1Error;
         private System.Windows.Forms.Button btnSetTrigger;
         private System.Windows.Forms.Button btnTestRelay1;
+        private System.Windows.Forms.Button btnTimedTestRelay1;
         private System.Windows.Forms.Button btnResetRelay1;
         private System.Windows.Forms.Label lblMode1;
         private System.Windows.Forms.ComboBox cmbMode1;
@@ -473,6 +488,7 @@ namespace IDS_NW_Monitor_v1a
         private System.Windows.Forms.Label lblTrigger2Error;
         private System.Windows.Forms.Button btnSetTrigger2;
         private System.Windows.Forms.Button btnTestRelay2;
+        private System.Windows.Forms.Button btnTimedTestRelay2;
         private System.Windows.Forms.Button btnResetRelay2;
         private System.Windows.Forms.Label lblMode2;
         private System.Windows.Forms.ComboBox cmbMode2;
