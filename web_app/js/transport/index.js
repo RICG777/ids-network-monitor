@@ -4,19 +4,16 @@
 
 import { MockTransport } from './mock.js';
 import { WebSerialTransport } from './webserial.js';
+import { HttpTransport } from './http.js';
 
 export { WebSerialTransport };  // re-export for isSupported/requestPort
 
 export function createTransport({ kind = 'mock', ...opts } = {}) {
     switch (kind) {
-        case 'mock':
-            return new MockTransport(opts);
-        case 'webserial':
-            return new WebSerialTransport(opts);
-        case 'http':
-            throw new Error('HTTP transport arrives with firmware v2f.2');
-        default:
-            throw new Error(`Unknown transport kind: ${kind}`);
+        case 'mock':      return new MockTransport(opts);
+        case 'webserial': return new WebSerialTransport(opts);
+        case 'http':      return new HttpTransport(opts);
+        default: throw new Error(`Unknown transport kind: ${kind}`);
     }
 }
 
