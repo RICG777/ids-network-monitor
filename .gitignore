@@ -32,3 +32,6 @@ Desktop.ini
 
 # Playwright MCP scratch output
 .playwright-mcp/
+
+# Screenshots from Playwright test sweeps
+web_app_tab_*.png
