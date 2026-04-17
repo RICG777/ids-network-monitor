@@ -1,21 +1,19 @@
-// IDS Network Monitor - Syslog Relay Trigger (ESP32-EVB)
-// Version: 2e.1
-// Port of v1d.4 (XBoard/ATmega32U4) to Olimex ESP32-EVB-IND
-// Changes from v1d.4:
-//   - ETH.h (RMII/LAN8720) replaces Ethernet.h (W5100)
-//   - Preferences (NVS) replaces EEPROM
-//   - Relay pins: GPIO32, GPIO33 (on-board relays)
-//   - Serial baud: 115200 (was 9600)
-//   - WiFi/BLE disabled on boot
-//   - MAC read from hardware (not hardcoded)
+// IDS Network Monitor - Syslog Relay Trigger + Ping Heartbeat (ESP32-EVB)
+// Version: 2e.2
+// Changes from v2e.1:
+//   - E1: ICMP ping heartbeat — up to 20 targets, configurable threshold/relay/mode
+//   - Relay coexistence: syslog and ping can independently trigger same relay
+//   - New PING: serial commands
 
 #include <ETH.h>
 #include <NetworkUdp.h>
 #include <Preferences.h>
 #include <WiFi.h>
 #include <esp_bt.h>
+#include "ping/ping_sock.h"
+#include "lwip/inet.h"
 
-#define FIRMWARE_VERSION "2e.1"
+#define FIRMWARE_VERSION "2e.2"
 #define TEST_PULSE_MS    3000
 #define MODE_PULSE 0
 #define MODE_LATCH 1
@@ -25,6 +23,14 @@
 #define DEFAULT_DURATION 10
 #define MAX_TRIG_STR     120
 #define BUFFER_SIZE      256
+
+// Ping constants
+#define MAX_PING_TARGETS  20
+#define PING_MODE_AUTO    0
+#define PING_MODE_LATCH   1
+#define PING_MODE_PULSE   2
+#define DEFAULT_PING_INTERVAL  30
+#define DEFAULT_PING_THRESHOLD 3
 
 // Relay pins (Olimex ESP32-EVB on-board relays)
 const int relayPin1 = 32;
@@ -48,7 +54,7 @@ char packetBuffer[BUFFER_SIZE];
 char r1Trigs[MAX_TRIG_STR] = "port up";
 char r2Trigs[MAX_TRIG_STR] = "port down";
 
-// Relay state
+// Syslog relay state
 bool relay1IsOn = false;
 bool relay2IsOn = false;
 unsigned long relay1OnTime = 0;
@@ -58,6 +64,38 @@ byte relay2Mode = MODE_PULSE;
 byte relay1Duration = DEFAULT_DURATION;
 byte relay2Duration = DEFAULT_DURATION;
 byte verbosity = VERB_NORMAL;
+
+// Ping targets
+IPAddress pingTargets[MAX_PING_TARGETS];
+bool      pingActive[MAX_PING_TARGETS];
+byte      pingFails[MAX_PING_TARGETS];
+bool      pingOK[MAX_PING_TARGETS];
+byte      pingCount = 0;
+
+// Ping global settings
+bool   pingEnabled   = false;
+byte   pingInterval  = DEFAULT_PING_INTERVAL;
+byte   pingThreshold = DEFAULT_PING_THRESHOLD;
+byte   pingRelay     = 1;
+byte   pingMode      = PING_MODE_AUTO;
+byte   pingDuration  = DEFAULT_DURATION;
+
+// Ping engine state
+byte   pingCurrentIdx  = 0;
+bool   pingInProgress  = false;
+unsigned long pingLastCycleMs = 0;
+bool   pingRelayIsOn   = false;
+unsigned long pingRelayOnTime = 0;
+esp_ping_handle_t pingSession = NULL;
+
+// ===================== RELAY OUTPUT =====================
+
+void updateRelayOutput(int relay) {
+    bool syslogWants = (relay == 1) ? relay1IsOn : relay2IsOn;
+    bool pingWants   = pingRelayIsOn && (pingRelay == relay);
+    int pin = (relay == 1) ? relayPin1 : relayPin2;
+    digitalWrite(pin, (syslogWants || pingWants) ? HIGH : LOW);
+}
 
 // ===================== ETHERNET EVENT =====================
 
@@ -94,7 +132,7 @@ void onEthEvent(arduino_event_id_t event) {
 void setup() {
     Serial.begin(115200);
     delay(2000);
-    Serial.println(F("ArdMsg: IDS Network Monitor v2e.1 starting..."));
+    Serial.println(F("ArdMsg: IDS Network Monitor v2e.2 starting..."));
 
     // Disable Bluetooth (E5 - security hardening)
     btStop();
@@ -130,6 +168,11 @@ void setup() {
         Serial.println(r1Trigs);
         Serial.print(F("ArdMsg: R2 triggers: "));
         Serial.println(r2Trigs);
+        if (pingEnabled && pingCount > 0) {
+            Serial.print(F("ArdMsg: Ping monitoring enabled, "));
+            Serial.print(pingCount);
+            Serial.println(F(" targets."));
+        }
     }
 
     Serial.println(F("ArdMsg: Setup complete. Listening for syslog messages..."));
@@ -163,6 +206,51 @@ void loadSettings() {
     String r2 = prefs.getString("r2trigs", "port down");
     strncpy(r2Trigs, r2.c_str(), MAX_TRIG_STR - 1);
     r2Trigs[MAX_TRIG_STR - 1] = '\0';
+
+    // Ping settings
+    pingEnabled   = prefs.getUChar("pEn", 0) == 1;
+    pingInterval  = prefs.getUChar("pInt", DEFAULT_PING_INTERVAL);
+    if (pingInterval < 5) pingInterval = DEFAULT_PING_INTERVAL;
+    pingThreshold = prefs.getUChar("pThr", DEFAULT_PING_THRESHOLD);
+    if (pingThreshold < 1) pingThreshold = DEFAULT_PING_THRESHOLD;
+    pingRelay     = clamp(prefs.getUChar("pRelay", 1), 1, 2, 1);
+    pingMode      = clamp(prefs.getUChar("pMode", PING_MODE_AUTO), 0, 2, PING_MODE_AUTO);
+    pingDuration  = prefs.getUChar("pDur", DEFAULT_DURATION);
+    if (pingDuration == 0) pingDuration = DEFAULT_DURATION;
+
+    pingCount = prefs.getUChar("pCnt", 0);
+    if (pingCount > MAX_PING_TARGETS) pingCount = 0;
+    for (byte i = 0; i < MAX_PING_TARGETS; i++) {
+        pingActive[i] = false;
+        pingFails[i] = 0;
+        pingOK[i] = true;
+    }
+    for (byte i = 0; i < pingCount; i++) {
+        char key[5];
+        snprintf(key, sizeof(key), "pT%d", i);
+        String s = prefs.getString(key, "");
+        if (s.length() > 0) {
+            pingTargets[i] = parseIP(s.c_str());
+            pingActive[i] = isValidIP(pingTargets[i]);
+        }
+    }
+}
+
+void savePingTargets() {
+    prefs.putUChar("pCnt", pingCount);
+    for (byte i = 0; i < MAX_PING_TARGETS; i++) {
+        char key[5];
+        snprintf(key, sizeof(key), "pT%d", i);
+        if (i < pingCount && pingActive[i]) {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%d.%d.%d.%d",
+                     pingTargets[i][0], pingTargets[i][1],
+                     pingTargets[i][2], pingTargets[i][3]);
+            prefs.putString(key, buf);
+        } else {
+            prefs.remove(key);
+        }
+    }
 }
 
 // ===================== UTILITY =====================
@@ -198,7 +286,6 @@ void printMAC() {
     Serial.println(ETH.macAddress());
 }
 
-// Check if packetBuffer matches any semicolon-separated trigger in trigStr
 bool matchTriggers(const char* trigStr) {
     char buf[MAX_TRIG_STR];
     strncpy(buf, trigStr, MAX_TRIG_STR - 1);
@@ -218,7 +305,320 @@ bool matchTriggers(const char* trigStr) {
     return false;
 }
 
+// ===================== PING ENGINE =====================
+
+// Forward declarations
+void pingOnSuccess(esp_ping_handle_t hdl, void *args);
+void pingOnTimeout(esp_ping_handle_t hdl, void *args);
+void pingOnEnd(esp_ping_handle_t hdl, void *args);
+
+byte findNextActiveTarget(byte startIdx) {
+    for (byte i = 0; i < pingCount; i++) {
+        byte idx = (startIdx + i) % pingCount;
+        if (pingActive[idx]) return idx;
+    }
+    return 255; // none found
+}
+
+void startNextPing() {
+    if (pingInProgress || pingCount == 0) return;
+
+    byte idx = findNextActiveTarget(pingCurrentIdx);
+    if (idx == 255) return;
+
+    pingCurrentIdx = idx;
+
+    esp_ping_config_t config = ESP_PING_DEFAULT_CONFIG();
+    config.target_addr.type = IPADDR_TYPE_V4;
+    config.target_addr.u_addr.ip4.addr = (uint32_t)pingTargets[idx];
+    config.count = 1;
+    config.interval_ms = 1000;
+    config.timeout_ms = 2000;
+    config.task_stack_size = 4096;
+
+    esp_ping_callbacks_t cbs = {};
+    cbs.on_ping_success = pingOnSuccess;
+    cbs.on_ping_timeout = pingOnTimeout;
+    cbs.on_ping_end = pingOnEnd;
+    cbs.cb_args = NULL;
+
+    esp_err_t err = esp_ping_new_session(&config, &cbs, &pingSession);
+    if (err != ESP_OK) {
+        if (verbosity >= VERB_DEBUG) {
+            Serial.print(F("ArdMsg: Ping session error: "));
+            Serial.println(err);
+        }
+        return;
+    }
+
+    pingInProgress = true;
+    esp_ping_start(pingSession);
+
+    if (verbosity >= VERB_DEBUG) {
+        Serial.print(F("ArdMsg: Pinging "));
+        Serial.println(pingTargets[idx]);
+    }
+}
+
+void cleanupPingSession() {
+    if (pingSession != NULL) {
+        esp_ping_stop(pingSession);
+        esp_ping_delete_session(pingSession);
+        pingSession = NULL;
+    }
+    pingInProgress = false;
+    // Advance to next target
+    pingCurrentIdx = (pingCurrentIdx + 1) % pingCount;
+}
+
+bool allTargetsHealthy() {
+    for (byte i = 0; i < pingCount; i++) {
+        if (pingActive[i] && pingFails[i] >= pingThreshold) return false;
+    }
+    return true;
+}
+
+void pingTriggerRelay() {
+    if (!pingRelayIsOn) {
+        pingRelayIsOn = true;
+        pingRelayOnTime = millis();
+        updateRelayOutput(pingRelay);
+        if (verbosity >= VERB_QUIET) {
+            Serial.println(F("ArdMsg: Ping FAIL - relay ENERGIZED!"));
+        }
+    }
+}
+
+void pingOnSuccess(esp_ping_handle_t hdl, void *args) {
+    byte idx = pingCurrentIdx;
+    pingFails[idx] = 0;
+    pingOK[idx] = true;
+
+    if (verbosity >= VERB_DEBUG) {
+        Serial.print(F("ArdMsg: Ping OK: "));
+        Serial.println(pingTargets[idx]);
+    }
+
+    // AUTO_RESET: clear relay if all targets healthy
+    if (pingRelayIsOn && pingMode == PING_MODE_AUTO && allTargetsHealthy()) {
+        pingRelayIsOn = false;
+        updateRelayOutput(pingRelay);
+        if (verbosity >= VERB_NORMAL) {
+            Serial.println(F("ArdMsg: All ping targets OK - relay cleared."));
+        }
+    }
+
+    cleanupPingSession();
+}
+
+void pingOnTimeout(esp_ping_handle_t hdl, void *args) {
+    byte idx = pingCurrentIdx;
+    if (pingFails[idx] < 255) pingFails[idx]++;
+    pingOK[idx] = false;
+
+    if (verbosity >= VERB_NORMAL) {
+        Serial.print(F("ArdMsg: Ping timeout: "));
+        Serial.print(pingTargets[idx]);
+        Serial.print(F(" (fails: "));
+        Serial.print(pingFails[idx]);
+        Serial.println(F(")"));
+    }
+
+    if (pingFails[idx] >= pingThreshold) {
+        pingTriggerRelay();
+    }
+
+    cleanupPingSession();
+}
+
+void pingOnEnd(esp_ping_handle_t hdl, void *args) {
+    // Safety cleanup if callbacks didn't fire
+    if (pingInProgress) {
+        cleanupPingSession();
+    }
+}
+
+// ===================== PING COMMANDS =====================
+
+void handlePingCommand(const char* cmd) {
+    if (strncmp(cmd, "ADD:", 4) == 0) {
+        IPAddress newIP = parseIP(cmd + 4);
+        if (!isValidIP(newIP)) {
+            Serial.println(F("ArdERR:PING:invalid IP"));
+            return;
+        }
+        // Check for duplicate
+        for (byte i = 0; i < pingCount; i++) {
+            if (pingActive[i] && pingTargets[i] == newIP) {
+                Serial.println(F("ArdERR:PING:duplicate"));
+                return;
+            }
+        }
+        if (pingCount >= MAX_PING_TARGETS) {
+            Serial.println(F("ArdERR:PING:full"));
+            return;
+        }
+        pingTargets[pingCount] = newIP;
+        pingActive[pingCount] = true;
+        pingFails[pingCount] = 0;
+        pingOK[pingCount] = true;
+        pingCount++;
+        savePingTargets();
+        Serial.print(F("ArdACK:PING:ADD:"));
+        Serial.println(newIP);
+
+    } else if (strncmp(cmd, "DEL:", 4) == 0) {
+        IPAddress delIP = parseIP(cmd + 4);
+        bool found = false;
+        for (byte i = 0; i < pingCount; i++) {
+            if (pingActive[i] && pingTargets[i] == delIP) {
+                // Compact array
+                for (byte j = i; j < pingCount - 1; j++) {
+                    pingTargets[j] = pingTargets[j+1];
+                    pingActive[j] = pingActive[j+1];
+                    pingFails[j] = pingFails[j+1];
+                    pingOK[j] = pingOK[j+1];
+                }
+                pingCount--;
+                pingActive[pingCount] = false;
+                if (pingCurrentIdx >= pingCount && pingCount > 0)
+                    pingCurrentIdx = 0;
+                savePingTargets();
+                found = true;
+                Serial.print(F("ArdACK:PING:DEL:"));
+                Serial.println(delIP);
+                break;
+            }
+        }
+        if (!found) Serial.println(F("ArdERR:PING:not found"));
+
+    } else if (strncmp(cmd, "LIST", 4) == 0) {
+        sendPingStatus();
+
+    } else if (strncmp(cmd, "INT:", 4) == 0) {
+        int val = atoi(cmd + 4);
+        if (val < 5 || val > 255) { Serial.println(F("ArdERR:PING:INT must be 5-255")); }
+        else {
+            pingInterval = val;
+            prefs.putUChar("pInt", pingInterval);
+            Serial.print(F("ArdACK:PING:INT:"));
+            Serial.println(pingInterval);
+        }
+
+    } else if (strncmp(cmd, "THR:", 4) == 0) {
+        int val = atoi(cmd + 4);
+        if (val < 1 || val > 255) { Serial.println(F("ArdERR:PING:THR must be 1-255")); }
+        else {
+            pingThreshold = val;
+            prefs.putUChar("pThr", pingThreshold);
+            Serial.print(F("ArdACK:PING:THR:"));
+            Serial.println(pingThreshold);
+        }
+
+    } else if (strncmp(cmd, "RELAY:", 6) == 0) {
+        int val = atoi(cmd + 6);
+        if (val < 1 || val > 2) { Serial.println(F("ArdERR:PING:RELAY must be 1-2")); }
+        else {
+            byte oldRelay = pingRelay;
+            pingRelay = val;
+            prefs.putUChar("pRelay", pingRelay);
+            // If relay changed and ping relay was on, update both outputs
+            if (pingRelayIsOn && oldRelay != pingRelay) {
+                updateRelayOutput(oldRelay);
+                updateRelayOutput(pingRelay);
+            }
+            Serial.print(F("ArdACK:PING:RELAY:"));
+            Serial.println(pingRelay);
+        }
+
+    } else if (strncmp(cmd, "MODE:", 5) == 0) {
+        if (strncmp(cmd + 5, "AUTO", 4) == 0) {
+            pingMode = PING_MODE_AUTO;
+        } else if (strncmp(cmd + 5, "LATCH", 5) == 0) {
+            pingMode = PING_MODE_LATCH;
+        } else if (strncmp(cmd + 5, "PULSE", 5) == 0) {
+            pingMode = PING_MODE_PULSE;
+        } else {
+            Serial.println(F("ArdERR:PING:MODE must be AUTO/LATCH/PULSE"));
+            return;
+        }
+        prefs.putUChar("pMode", pingMode);
+        Serial.print(F("ArdACK:PING:MODE:"));
+        Serial.println(pingMode == PING_MODE_AUTO ? "AUTO" : (pingMode == PING_MODE_LATCH ? "LATCH" : "PULSE"));
+
+    } else if (strncmp(cmd, "DUR:", 4) == 0) {
+        int val = atoi(cmd + 4);
+        if (val < 1 || val > 255) { Serial.println(F("ArdERR:PING:DUR must be 1-255")); }
+        else {
+            pingDuration = val;
+            prefs.putUChar("pDur", pingDuration);
+            Serial.print(F("ArdACK:PING:DUR:"));
+            Serial.println(pingDuration);
+        }
+
+    } else if (strncmp(cmd, "ON", 2) == 0) {
+        pingEnabled = true;
+        prefs.putUChar("pEn", 1);
+        pingLastCycleMs = millis(); // start fresh
+        Serial.println(F("ArdACK:PING:ON"));
+
+    } else if (strncmp(cmd, "OFF", 3) == 0) {
+        pingEnabled = false;
+        prefs.putUChar("pEn", 0);
+        Serial.println(F("ArdACK:PING:OFF"));
+
+    } else if (strncmp(cmd, "RESET", 5) == 0) {
+        pingRelayIsOn = false;
+        for (byte i = 0; i < pingCount; i++) pingFails[i] = 0;
+        updateRelayOutput(pingRelay);
+        Serial.println(F("ArdACK:PING:RESET:OK"));
+
+    } else if (strncmp(cmd, "CLR", 3) == 0) {
+        pingCount = 0;
+        for (byte i = 0; i < MAX_PING_TARGETS; i++) {
+            pingActive[i] = false;
+            pingFails[i] = 0;
+            pingOK[i] = true;
+        }
+        pingRelayIsOn = false;
+        updateRelayOutput(pingRelay);
+        savePingTargets();
+        Serial.println(F("ArdACK:PING:CLR:OK"));
+    }
+}
+
 // ===================== STATUS =====================
+
+void sendPingStatus() {
+    Serial.print(F("ArdSTATUS:PING:EN:"));
+    Serial.println(pingEnabled ? 1 : 0);
+    Serial.print(F("ArdSTATUS:PING:INT:"));
+    Serial.println(pingInterval);
+    Serial.print(F("ArdSTATUS:PING:THR:"));
+    Serial.println(pingThreshold);
+    Serial.print(F("ArdSTATUS:PING:RELAY:"));
+    Serial.println(pingRelay);
+    Serial.print(F("ArdSTATUS:PING:MODE:"));
+    Serial.println(pingMode == PING_MODE_AUTO ? "AUTO" : (pingMode == PING_MODE_LATCH ? "LATCH" : "PULSE"));
+    Serial.print(F("ArdSTATUS:PING:DUR:"));
+    Serial.println(pingDuration);
+    Serial.print(F("ArdSTATUS:PING:CNT:"));
+    Serial.println(pingCount);
+    for (byte i = 0; i < pingCount; i++) {
+        if (pingActive[i]) {
+            Serial.print(F("ArdSTATUS:PING:T"));
+            Serial.print(i);
+            Serial.print(F(":"));
+            Serial.print(pingTargets[i]);
+            Serial.print(F(":"));
+            Serial.print(pingFails[i] >= pingThreshold ? "FAIL" : "OK");
+            Serial.print(F(":"));
+            Serial.println(pingFails[i]);
+        }
+    }
+    Serial.print(F("ArdSTATUS:PING:RSTATE:"));
+    Serial.println(pingRelayIsOn ? "ON" : "OFF");
+}
 
 void sendStatus() {
     Serial.print(F("ArdSTATUS:FW:"));
@@ -249,6 +649,7 @@ void sendStatus() {
     Serial.println(relay2IsOn ? "ON" : "OFF");
     Serial.print(F("ArdSTATUS:VERBOSITY:"));
     Serial.println(verbosity);
+    sendPingStatus();
 }
 
 // ===================== MAIN LOOP =====================
@@ -343,15 +744,20 @@ void loop() {
                 Serial.print(F("ArdACK:VERBOSITY:")); Serial.println(verbosity); }
 
         } else if (strncmp(message, "RESET1", 6) == 0) {
-            digitalWrite(relayPin1, LOW); relay1IsOn = false;
+            relay1IsOn = false;
+            updateRelayOutput(1);
             Serial.println(F("ArdACK:RESET1:OK"));
 
         } else if (strncmp(message, "RESET2", 6) == 0) {
-            digitalWrite(relayPin2, LOW); relay2IsOn = false;
+            relay2IsOn = false;
+            updateRelayOutput(2);
             Serial.println(F("ArdACK:RESET2:OK"));
 
         } else if (strncmp(message, "STATUS", 6) == 0) {
             sendStatus();
+
+        } else if (strncmp(message, "PING:", 5) == 0) {
+            handlePingCommand(message + 5);
 
         } else if (strncmp(message, "TTEST1", 6) == 0) {
             Serial.print(F("ArdACK:TTEST1:pulsing ")); Serial.print(relay1Duration); Serial.println(F("s"));
@@ -386,11 +792,11 @@ void loop() {
         }
     }
 
-    // Trigger matching — semicolon-separated OR logic
+    // Syslog trigger matching
     if (!relay1IsOn && matchTriggers(r1Trigs)) {
-        digitalWrite(relayPin1, HIGH);
         relay1IsOn = true;
         relay1OnTime = millis();
+        updateRelayOutput(1);
         if (verbosity >= VERB_QUIET) {
             Serial.println(F("ArdMsg: Relay 1 ENERGIZED - trigger matched!"));
         }
@@ -398,26 +804,46 @@ void loop() {
     }
 
     if (!relay2IsOn && matchTriggers(r2Trigs)) {
-        digitalWrite(relayPin2, HIGH);
         relay2IsOn = true;
         relay2OnTime = millis();
+        updateRelayOutput(2);
         if (verbosity >= VERB_QUIET) {
             Serial.println(F("ArdMsg: Relay 2 ENERGIZED - trigger matched!"));
         }
         memset(packetBuffer, 0, BUFFER_SIZE);
     }
 
-    // Relay timeout — pulse mode only
+    // Syslog relay timeout — pulse mode only
     if (relay1IsOn && relay1Mode == MODE_PULSE && (millis() - relay1OnTime >= (unsigned long)relay1Duration * 1000UL)) {
-        digitalWrite(relayPin1, LOW); relay1IsOn = false;
+        relay1IsOn = false;
+        updateRelayOutput(1);
         if (verbosity >= VERB_NORMAL) {
             Serial.print(F("ArdMsg: Relay 1 de-energized (")); Serial.print(relay1Duration); Serial.println(F("s timeout)."));
         }
     }
     if (relay2IsOn && relay2Mode == MODE_PULSE && (millis() - relay2OnTime >= (unsigned long)relay2Duration * 1000UL)) {
-        digitalWrite(relayPin2, LOW); relay2IsOn = false;
+        relay2IsOn = false;
+        updateRelayOutput(2);
         if (verbosity >= VERB_NORMAL) {
             Serial.print(F("ArdMsg: Relay 2 de-energized (")); Serial.print(relay2Duration); Serial.println(F("s timeout)."));
+        }
+    }
+
+    // Ping engine
+    if (pingEnabled && ethConnected && pingCount > 0) {
+        if (!pingInProgress && (millis() - pingLastCycleMs >= (unsigned long)pingInterval * 1000UL)) {
+            pingLastCycleMs = millis();
+            startNextPing();
+        }
+    }
+
+    // Ping relay pulse timeout
+    if (pingRelayIsOn && pingMode == PING_MODE_PULSE &&
+        (millis() - pingRelayOnTime >= (unsigned long)pingDuration * 1000UL)) {
+        pingRelayIsOn = false;
+        updateRelayOutput(pingRelay);
+        if (verbosity >= VERB_NORMAL) {
+            Serial.println(F("ArdMsg: Ping relay de-energized (pulse timeout)."));
         }
     }
 }

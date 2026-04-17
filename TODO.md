@@ -93,22 +93,24 @@ All firmware features complete for XBoard (v1d.4). No remaining items.
 | W17 | Error handling polish | Clean messages for all failure modes | Medium |
 | W18 | Resizable window | Anchored controls (partially done) | Low |
 | W19 | Export/import config | Save/load board config as JSON | Medium |
-| W21 | Connection heartbeat LED | Animated indicator showing comms are live | Low |
-| W22 | Dark/light theme | Match Windows system theme | Low |
+| W21 | Connection heartbeat LED | Animated indicator showing comms are live | Medium |
 | W24 | Installer (MSI/MSIX) | Windows installer with Start Menu shortcut | High (pre-launch) |
 | W25 | Log filtering & search | Filter by type, search box | Low |
 | W27 | Multi-unit support | Manage multiple boards from one app | Low |
-| W28 | System tray notifications | Minimise to tray, popup on relay fire | Medium |
 
 ## Future — ESP32 Board Only
 | ID | Item | Description |
 |----|------|-------------|
-| E1 | ICMP ping heartbeat | Ping monitored devices, trigger relay on comms loss |
-| E2 | SNMP trap parsing | Full ASN.1 decoding (needs 512KB SRAM) |
-| E3 | Web-based config UI | Browser interface hosted on device, replace Windows app |
+| E1 | ICMP ping heartbeat | Ping up to 20 devices, trigger relay on comms loss. Configurable threshold (default 3), target relay (default R1), mode (auto-reset/latch/pulse) |
+| E3 | Web-based config UI | Browser interface hosted on device. Jumper-gated (UEXT pins 5+6, GPIO 16+13) — secure by default |
+| E5 | ~~Disable WiFi/BLE~~ | Done in v2e.1 |
+| E9 | Failsafe/watchdog relay | Dedicated relay energised when running, drops on power loss or board lockup. Hardware watchdog resets board if loop stalls. Alarm panel wires to NC contact |
+
+### Deferred — Post First Release
+| ID | Item | Description |
+|----|------|-------------|
+| E2 | SNMP trap parsing | Full ASN.1 decoding (complex) |
 | E4 | 4 relays | Separate security / environmental / comms-fail / spare |
-| E5 | Disable WiFi/BLE | Security hardening for deployments |
-| E6 | LiPo mains fail detection | Alert on power loss using built-in UPS |
 | E7 | OTA firmware updates | Update over Ethernet without USB |
 | E8 | Event logging to microSD | Persistent log of triggers and state changes |
 
