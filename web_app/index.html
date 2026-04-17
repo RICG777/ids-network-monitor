@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IDS Network Monitor</title>
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <header>
+        <h1>IDS Network Monitor</h1>
+        <nav class="tabs" id="tabs">
+            <button class="tab" data-tab="connection">Connection</button>
+            <button class="tab" data-tab="relays">Relay Config</button>
+            <button class="tab" data-tab="ping">Ping Config</button>
+            <button class="tab" data-tab="events">Event Log</button>
+            <button class="tab" data-tab="about">About</button>
+        </nav>
+    </header>
+
+    <main id="panel" class="panel"></main>
+
+    <footer class="status-bar">
+        <span id="status-connection">Disconnected</span>
+        <span class="sep">|</span>
+        <span id="status-transport">—</span>
+        <span class="sep">|</span>
+        <span id="status-board-ip">Board IP: —</span>
+        <span class="sep">|</span>
+        <span id="status-firmware">FW: —</span>
+    </footer>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
