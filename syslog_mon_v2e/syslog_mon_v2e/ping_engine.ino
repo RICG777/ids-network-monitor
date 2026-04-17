@@ -79,9 +79,7 @@ void pingTriggerRelay() {
         pingRelayIsOn = true;
         pingRelayOnTime = millis();
         updateRelayOutput(pingRelay);
-        if (verbosity >= VERB_QUIET) {
-            Serial.println(F("ArdMsg: Ping FAIL - relay ENERGIZED!"));
-        }
+        logEvent(VERB_QUIET, "Ping FAIL - relay ENERGIZED!");
     }
 }
 
@@ -99,9 +97,7 @@ void pingOnSuccess(esp_ping_handle_t hdl, void *args) {
     if (pingRelayIsOn && pingMode == PING_MODE_AUTO && allTargetsHealthy()) {
         pingRelayIsOn = false;
         updateRelayOutput(pingRelay);
-        if (verbosity >= VERB_NORMAL) {
-            Serial.println(F("ArdMsg: All ping targets OK - relay cleared."));
-        }
+        logEvent(VERB_NORMAL, "All ping targets OK - relay cleared.");
     }
 
     cleanupPingSession();
@@ -112,13 +108,8 @@ void pingOnTimeout(esp_ping_handle_t hdl, void *args) {
     if (pingFails[idx] < 255) pingFails[idx]++;
     pingOK[idx] = false;
 
-    if (verbosity >= VERB_NORMAL) {
-        Serial.print(F("ArdMsg: Ping timeout: "));
-        Serial.print(pingTargets[idx]);
-        Serial.print(F(" (fails: "));
-        Serial.print(pingFails[idx]);
-        Serial.println(F(")"));
-    }
+    logEvent(VERB_NORMAL, "Ping timeout: %s (fails: %d)",
+             pingTargets[idx].toString().c_str(), pingFails[idx]);
 
     if (pingFails[idx] >= pingThreshold) {
         pingTriggerRelay();

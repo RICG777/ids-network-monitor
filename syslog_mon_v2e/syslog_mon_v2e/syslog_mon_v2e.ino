@@ -1,8 +1,9 @@
 // IDS Network Monitor - Syslog Relay Trigger + Ping Heartbeat (ESP32-EVB)
-// Version: 2e.3
-// Changes from v2e.2:
-//   - Multi-file refactor: serial command dispatcher extracted to serial_cmds.ino,
-//     ping engine + commands extracted to ping_engine.ino. No functional change.
+// Version: 2f.1
+// Changes from v2e.3:
+//   - E3 scaffolding: UEXT jumper gate (GPIO 16 drive LOW, GPIO 13 INPUT_PULLUP,
+//     debounced, tamper-logged). Event ring buffer (64 entries) fed by logEvent().
+//     STATUS adds JUMPER and HEAP lines. No HTTP server yet — that arrives in v2f.2.
 
 #include <ETH.h>
 #include <NetworkUdp.h>
@@ -12,7 +13,7 @@
 #include "ping/ping_sock.h"
 #include "lwip/inet.h"
 
-#define FIRMWARE_VERSION "2e.3"
+#define FIRMWARE_VERSION "2f.1"
 #define TEST_PULSE_MS    3000
 #define MODE_PULSE 0
 #define MODE_LATCH 1
@@ -87,6 +88,9 @@ bool   pingRelayIsOn   = false;
 unsigned long pingRelayOnTime = 0;
 esp_ping_handle_t pingSession = NULL;
 
+// Forward declaration — defined in web_util.ino (concatenated after this file)
+extern bool jumperFitted;
+
 // ===================== RELAY OUTPUT =====================
 
 void updateRelayOutput(int relay) {
@@ -105,21 +109,16 @@ void onEthEvent(arduino_event_id_t event) {
                 Serial.println(F("ArdMsg: Ethernet started."));
             break;
         case ARDUINO_EVENT_ETH_CONNECTED:
-            if (verbosity >= VERB_NORMAL)
-                Serial.println(F("ArdMsg: Ethernet cable connected."));
+            logEvent(VERB_NORMAL, "Ethernet cable connected.");
             break;
         case ARDUINO_EVENT_ETH_GOT_IP:
             ethConnected = true;
             Udp.begin(localPort);
-            if (verbosity >= VERB_NORMAL) {
-                Serial.print(F("ArdMsg: Board IP: "));
-                Serial.println(ETH.localIP());
-            }
+            logEvent(VERB_NORMAL, "Board IP: %s", ETH.localIP().toString().c_str());
             break;
         case ARDUINO_EVENT_ETH_DISCONNECTED:
             ethConnected = false;
-            if (verbosity >= VERB_NORMAL)
-                Serial.println(F("ArdMsg: Ethernet cable disconnected."));
+            logEvent(VERB_NORMAL, "Ethernet cable disconnected.");
             break;
         default:
             break;
@@ -131,12 +130,12 @@ void onEthEvent(arduino_event_id_t event) {
 void setup() {
     Serial.begin(115200);
     delay(2000);
-    Serial.println(F("ArdMsg: IDS Network Monitor v2e.3 starting..."));
+    logEvent(VERB_NORMAL, "IDS Network Monitor v%s starting...", FIRMWARE_VERSION);
 
     // Disable Bluetooth (E5 - security hardening)
     btStop();
     esp_bt_controller_disable();
-    Serial.println(F("ArdMsg: BLE disabled."));
+    logEvent(VERB_NORMAL, "BLE disabled.");
 
     // Load settings from NVS
     prefs.begin("ids", false);
@@ -147,6 +146,9 @@ void setup() {
     digitalWrite(relayPin1, LOW);
     pinMode(relayPin2, OUTPUT);
     digitalWrite(relayPin2, LOW);
+
+    // UEXT jumper gate (E3 scaffolding)
+    setupJumper();
 
     // Ethernet
     Network.onEvent(onEthEvent);
@@ -160,7 +162,7 @@ void setup() {
 
     // Disable WiFi after Ethernet is started (shares internal resources)
     WiFi.mode(WIFI_OFF);
-    Serial.println(F("ArdMsg: WiFi disabled."));
+    logEvent(VERB_NORMAL, "WiFi disabled.");
 
     if (verbosity >= VERB_NORMAL) {
         Serial.print(F("ArdMsg: R1 triggers: "));
@@ -174,7 +176,7 @@ void setup() {
         }
     }
 
-    Serial.println(F("ArdMsg: Setup complete. Listening for syslog messages..."));
+    logEvent(VERB_NORMAL, "Setup complete. Listening for syslog messages...");
 }
 
 // ===================== NVS HELPERS =====================
@@ -335,12 +337,18 @@ void sendStatus() {
     Serial.println(relay2IsOn ? "ON" : "OFF");
     Serial.print(F("ArdSTATUS:VERBOSITY:"));
     Serial.println(verbosity);
+    Serial.print(F("ArdSTATUS:JUMPER:"));
+    Serial.println(jumperFitted ? "FITTED" : "OPEN");
+    Serial.print(F("ArdSTATUS:HEAP:"));
+    Serial.println(ESP.getFreeHeap());
     sendPingStatus();
 }
 
 // ===================== MAIN LOOP =====================
 
 void loop() {
+    checkJumperPeriodic();
+
     if (Serial.available()) {
         char message[128];
         int bytesRead = Serial.readBytesUntil('\n', message, sizeof(message) - 1);
@@ -368,9 +376,7 @@ void loop() {
         relay1IsOn = true;
         relay1OnTime = millis();
         updateRelayOutput(1);
-        if (verbosity >= VERB_QUIET) {
-            Serial.println(F("ArdMsg: Relay 1 ENERGIZED - trigger matched!"));
-        }
+        logEvent(VERB_QUIET, "Relay 1 ENERGIZED - trigger matched!");
         memset(packetBuffer, 0, BUFFER_SIZE);
     }
 
@@ -378,9 +384,7 @@ void loop() {
         relay2IsOn = true;
         relay2OnTime = millis();
         updateRelayOutput(2);
-        if (verbosity >= VERB_QUIET) {
-            Serial.println(F("ArdMsg: Relay 2 ENERGIZED - trigger matched!"));
-        }
+        logEvent(VERB_QUIET, "Relay 2 ENERGIZED - trigger matched!");
         memset(packetBuffer, 0, BUFFER_SIZE);
     }
 
@@ -388,16 +392,12 @@ void loop() {
     if (relay1IsOn && relay1Mode == MODE_PULSE && (millis() - relay1OnTime >= (unsigned long)relay1Duration * 1000UL)) {
         relay1IsOn = false;
         updateRelayOutput(1);
-        if (verbosity >= VERB_NORMAL) {
-            Serial.print(F("ArdMsg: Relay 1 de-energized (")); Serial.print(relay1Duration); Serial.println(F("s timeout)."));
-        }
+        logEvent(VERB_NORMAL, "Relay 1 de-energized (%ds timeout).", relay1Duration);
     }
     if (relay2IsOn && relay2Mode == MODE_PULSE && (millis() - relay2OnTime >= (unsigned long)relay2Duration * 1000UL)) {
         relay2IsOn = false;
         updateRelayOutput(2);
-        if (verbosity >= VERB_NORMAL) {
-            Serial.print(F("ArdMsg: Relay 2 de-energized (")); Serial.print(relay2Duration); Serial.println(F("s timeout)."));
-        }
+        logEvent(VERB_NORMAL, "Relay 2 de-energized (%ds timeout).", relay2Duration);
     }
 
     // Ping engine
@@ -413,8 +413,6 @@ void loop() {
         (millis() - pingRelayOnTime >= (unsigned long)pingDuration * 1000UL)) {
         pingRelayIsOn = false;
         updateRelayOutput(pingRelay);
-        if (verbosity >= VERB_NORMAL) {
-            Serial.println(F("ArdMsg: Ping relay de-energized (pulse timeout)."));
-        }
+        logEvent(VERB_NORMAL, "Ping relay de-energized (pulse timeout).");
     }
 }
