@@ -10,8 +10,8 @@ namespace IDS_NW_Monitor_v1a
     public partial class Form1 : Form
     {
         private SerialPort serialPort;
-        private const string BUILD_VERSION = "0.8.0";
-        private const string EXPECTED_FW_VERSION = "1d.4";
+        private const string BUILD_VERSION = "0.9.0";
+        private const string EXPECTED_FW_VERSION = "2e.1";
         private bool isConnected = false;
         private bool suppressEvents = false;
         private StreamWriter logWriter = null;
@@ -29,7 +29,7 @@ namespace IDS_NW_Monitor_v1a
             if (!string.IsNullOrEmpty(s.Trigger1)) textBoxTrigger.Text = s.Trigger1;
             if (!string.IsNullOrEmpty(s.Trigger2)) textBoxTrigger2.Text = s.Trigger2;
 
-            serialPort = new SerialPort { BaudRate = 9600 };
+            serialPort = new SerialPort { BaudRate = 115200 };
             serialPort.DataReceived += serialPort_DataReceived;
             statusFirmware.Text = "App v" + BUILD_VERSION;
             StartLogFile();

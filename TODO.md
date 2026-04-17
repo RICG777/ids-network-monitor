@@ -2,7 +2,10 @@
 
 ## Hardware Versions
 - **XBoard Relay (DFR0222)** — ATmega32U4 + W5100, current dev board
-- **Olimex ESP32-EVB-IND** — ESP32 + LAN8710A, ordered, awaiting delivery
+- **Olimex ESP32-EVB-IND** — ESP32-D0WD-V3 + LAN8710A, connected and verified
+  - COM8 (CH340 USB-Serial), 240MHz dual core, 4MB flash, 291KB free heap
+  - Ethernet MAC: EC:C9:FF:BC:A7:C4
+  - Toolchain: arduino-cli + esp32:esp32 v3.3.8, FQBN: `esp32:esp32:esp32-evb`
 
 ## Completed
 
@@ -16,6 +19,13 @@
 | B4 | Trigger length validation before EEPROM write | v1d |
 | C2 | ACK/ERR protocol for config commands | v1d |
 | C3 | STATUS command (IP, triggers, relay states) | v1d |
+| C1 | Configurable relay mode (Pulse/Latch per relay) | v1d.2 |
+| C6 | Configurable pulse duration per relay | v1d.2 |
+| C7 | Manual relay reset command | v1d.2 |
+| C10a | Read-only MAC address display | v1d.2 |
+| C9 | Multiple triggers per relay (semicolon-separated) | v1d.4 |
+| C11 | Subnet mask / gateway config | v1d.3 |
+| C12 | Debug log output control (verbosity 0-2) | v1d.3 |
 
 ### Windows App
 | ID | Item | Version |
@@ -32,44 +42,49 @@
 | W13 | Inline validation (IP, trigger length) | v0.4.0 |
 | W14 | Controls greyed out when disconnected | v0.4.0 |
 | W20 | COM port refresh button | v0.4.0 |
+| W1 | Relay mode selector (Pulse/Latch dropdown) | v0.6.0 |
+| W2 | Pulse duration setting per relay | v0.6.0 |
+| W3 | Manual relay reset buttons | v0.6.0 |
+| W6a | Read-only MAC address display | v0.6.0 |
+| W26 | Relay test buttons (Quick 3s + Timed) | v0.6.0 |
+| W5 | Multiple triggers per relay (semicolon UI) | v0.8.0 |
+| W7 | Subnet mask / gateway fields | v0.7.0 |
+| W8 | Log to file | v0.5.0 |
+| W16 | About dialog | v0.5.0 |
+| W23 | Firmware version check | v0.5.0 |
 
 ## In Progress
 
 _None_
 
+## Completed — ESP32 Port (Phase 1)
+
+### Firmware v2e.1
+| ID | Item | Status |
+|----|------|--------|
+| P1 | Library port (ETH.h, NetworkUdp, Preferences) | Done |
+| P2 | Pin remapping (GPIO32, GPIO33) | Done |
+| P3 | Event-driven Ethernet (RMII/LAN8720) | Done |
+| P4 | EEPROM → NVS Preferences storage | Done |
+| P5 | Serial protocol (identical to v1d.4) | Done |
+| P6 | WiFi/BLE disable on boot (E5) | Done |
+| P7 | Hardware MAC address (dynamic) | Done |
+| P8 | Relay tests (TEST/TTEST/RESET) | Done |
+| P9 | Config persistence across reboot | Done |
+| P10 | Error validation (duration/verbosity/triggers) | Done |
+
+### Windows App v0.9.0
+| ID | Item | Status |
+|----|------|--------|
+| P11 | Baud rate 9600 → 115200 | Done |
+| P12 | Expected FW version → 2e.1 | Done |
+| P13 | App version → 0.9.0 | Done |
+
 ## Remaining — Current Hardware (XBoard)
 
 ### Firmware Changes
-| ID | Item | Description | Priority |
-|----|------|-------------|----------|
-| C1 | Configurable relay mode | Pulse vs Latch per relay, stored in EEPROM | High |
-| C6 | Configurable pulse duration | Per-relay: 5s/10s/30s/60s, stored in EEPROM | High |
-| C7 | Manual relay reset command | Serial command to de-energize a latched relay | High |
-| C9 | Multiple triggers per relay | 2-3 triggers per relay within EEPROM budget | Medium |
-| C10 | ~~Configurable MAC address~~ | PARKED — wait for ESP32 boards to confirm unique MACs. Config should be manufacture-only, not user-facing | — |
-| C10a | Read-only MAC address display | Report MAC in STATUS response for commissioning/O&M documentation | High |
-| C11 | Subnet mask / gateway config | Full network config, not just IP | Medium |
-| C12 | Debug log output control | Option to reduce serial debug verbosity | Low |
 
-### Windows App — Must Have (hardware matching)
-| ID | Item | Description | Depends On | Priority |
-|----|------|-------------|------------|----------|
-| W1 | Relay mode selector | Dropdown: Pulse / Latch per relay | C1 | High |
-| W2 | Pulse duration setting | Numeric per relay: 5s, 10s, 30s, 60s | C6 | High |
-| W3 | Manual relay reset buttons | "Reset" button per relay | C7 | High |
-| W4 | Live relay status polling | Periodic STATUS poll to keep indicators current | — | Medium |
-| W5 | Multiple triggers per relay | Add/remove list UI per relay | C9 | Medium |
-| W6 | ~~MAC address configuration~~ | PARKED — manufacture-only function, not user-facing | — | — |
-| W6a | Read-only MAC address display | Show MAC on Connection tab for commissioning/O&M | C10a | High |
-| W7 | Subnet mask / gateway fields | UI is in place, firmware needs support | C11 | Medium |
-| W8 | Log to file | Auto-save event log to timestamped text file | — | High |
-
-### Windows App — Next Up (no firmware dependency)
-| ID | Item | Description | Priority |
-|----|------|-------------|----------|
-| W26 | Relay test buttons | "Test Relay 1/2" — momentary pulse to verify wiring | High |
-| W16 | About dialog | Version, copyright, support contact | Medium |
-| W23 | Firmware version check | Read version from STATUS, warn on mismatch | Medium |
+All firmware features complete for XBoard (v1d.4). No remaining items.
 
 ### Windows App — Polish
 | ID | Item | Description | Priority |
@@ -98,8 +113,19 @@ _None_
 | E8 | Event logging to microSD | Persistent log of triggers and state changes |
 
 ## Build & Deploy Notes
-- **Arduino CLI**: `arduino-cli compile --fqbn arduino:avr:leonardoeth <sketch_dir>`
-- **Arduino upload**: `arduino-cli upload --fqbn arduino:avr:leonardoeth --port COM6 <sketch_dir>`
+
+### XBoard (ATmega32U4)
+- **Compile**: `arduino-cli compile --fqbn arduino:avr:leonardoeth <sketch_dir>`
+- **Upload**: `arduino-cli upload --fqbn arduino:avr:leonardoeth --port COM6 <sketch_dir>`
+
+### ESP32-EVB (Olimex)
+- **Compile**: `arduino-cli compile --fqbn esp32:esp32:esp32-evb <sketch_dir>`
+- **Upload**: `arduino-cli upload --fqbn esp32:esp32:esp32-evb --port COM8 <sketch_dir>`
+- **Board core**: esp32:esp32 v3.3.8
+- **Serial baud**: 115200
+
+### Windows App
 - **MSBuild**: `"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe" <sln> -p:Configuration=Release`
 - **Exe location**: `windows app\source\repos\IDS NW Monitor v1a\bin\Release\IDS NW Monitor v1a.exe`
+
 - **GitHub**: https://github.com/RICG777/ids-network-monitor
