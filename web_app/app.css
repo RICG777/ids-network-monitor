@@ -297,8 +297,9 @@ button.danger:hover:not(:disabled) { background: var(--err); color: var(--fg); }
     max-width: 30rem;
 }
 .about a { color: var(--accent); }
-.about img.logo {
+img.logo {
     max-height: 4rem;
+    display: block;
     margin: 0.5rem 0 1rem 0;
 }
 
@@ -365,6 +366,28 @@ dialog.confirm .btn-row { justify-content: flex-end; margin: 0; }
 @keyframes slide-in {
     from { transform: translateX(20px); opacity: 0; }
     to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* --- Tab button overrides (beat the generic `button` rules) --- */
+.tabs > button.tab {
+    background: transparent;
+    color: var(--fg-dim);
+    border: 1px solid transparent;
+    border-bottom: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+}
+.tabs > button.tab:hover:not(:disabled) {
+    background: var(--bg);
+    color: var(--fg);
+}
+.tabs > button.tab.active {
+    background: var(--bg);
+    color: var(--accent);
+    border-color: var(--border);
+    position: relative;
+    top: 1px;
 }
 
 /* --- Connection tab bits --- */

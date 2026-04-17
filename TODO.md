@@ -55,7 +55,22 @@
 
 ## In Progress
 
-_None_
+### Web UI (E3, local mode) — v0.1.0-dev
+| ID | Item | Status |
+|----|------|--------|
+| WEB0 | Skeleton: HTML/CSS/JS scaffold, tab router, state store, mock transport stub | Done |
+| WEB1 | Protocol parser, mock firmware simulator, live Event Log | Done |
+| WEB2 | Web Serial adapter (USB CDC, 115200 8N1, flowControl none) | Done — needs first-hardware-test |
+| WEB3 | Connection tab: connect/disconnect, IP/subnet/gateway write, MAC + FW display, mismatch banner | Done |
+| WEB4 | Relay Config tab: triggers/mode/duration write, Reset, Quick Test, Timed Test + blocking UX | Done |
+| WEB5 | Ping Config tab: global settings + target list (up to 20) with per-target OK/FAIL | Done |
+| WEB6 | About tab with Tier8 branding, transport switcher, URL-param reference | Done |
+| WEB7 | HTTP transport stub + `web_app/README.md` | Done |
+
+Still to do for the web app before it can retire the WinForms app:
+- Real-hardware validation of Web Serial adapter (first click from Ric).
+- HTTP transport implementation, arrives alongside firmware v2f.2.
+- Migrate assets into firmware PROGMEM / LittleFS (firmware-side work).
 
 ## Completed — ESP32 Port (Phase 1)
 
@@ -102,7 +117,7 @@ All firmware features complete for XBoard (v1d.4). No remaining items.
 | ID | Item | Description |
 |----|------|-------------|
 | E1 | ICMP ping heartbeat | Ping up to 20 devices, trigger relay on comms loss. Configurable threshold (default 3), target relay (default R1), mode (auto-reset/latch/pulse) |
-| E3 | Web-based config UI | Browser interface hosted on device. Jumper-gated (UEXT pins 5+6, GPIO 16+13) — secure by default |
+| E3 | Web-based config UI | Browser interface. Local mode (Web Serial over USB) v0.1.0 in `web_app/` — see WEB0-7 above. Remote mode (hosted on ESP32 over HTTP) lands with firmware v2f.2: jumper-gated (UEXT pins 5+6, GPIO 16+13) — secure by default |
 | E5 | ~~Disable WiFi/BLE~~ | Done in v2e.1 |
 | E9 | Failsafe/watchdog relay | Dedicated relay energised when running, drops on power loss or board lockup. Hardware watchdog resets board if loop stalls. Alarm panel wires to NC contact |
 
