@@ -29,3 +29,6 @@ Desktop.ini
 # Large binaries / installers (available online)
 *.setup.exe
 *.zip
+
+# Playwright MCP scratch output
+.playwright-mcp/
