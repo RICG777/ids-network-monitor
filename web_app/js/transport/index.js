@@ -3,13 +3,16 @@
 // interface (connect, disconnect, sendCommand, EventTarget events).
 
 import { MockTransport } from './mock.js';
+import { WebSerialTransport } from './webserial.js';
+
+export { WebSerialTransport };  // re-export for isSupported/requestPort
 
 export function createTransport({ kind = 'mock', ...opts } = {}) {
     switch (kind) {
         case 'mock':
             return new MockTransport(opts);
         case 'webserial':
-            throw new Error('Web Serial transport arrives in Phase 2');
+            return new WebSerialTransport(opts);
         case 'http':
             throw new Error('HTTP transport arrives with firmware v2f.2');
         default:
@@ -18,11 +21,23 @@ export function createTransport({ kind = 'mock', ...opts } = {}) {
 }
 
 // Resolve which transport to use from URL param or localStorage.
+// Falls back to 'mock' if the preferred transport isn't supported in this
+// browser, so the app is still usable on Firefox/Safari (Web Serial is
+// Chrome/Edge only).
 export function pickTransportKind() {
     const params = new URLSearchParams(window.location.search);
     const fromUrl = params.get('transport');
-    if (fromUrl) return fromUrl;
-    const stored = localStorage.getItem('idsnm.transport');
-    if (stored) return stored;
-    return 'mock';
+    const candidate = fromUrl
+        ?? (() => { try { return localStorage.getItem('idsnm.transport'); } catch { return null; } })()
+        ?? 'webserial';
+
+    if (candidate === 'webserial' && !WebSerialTransport.isSupported()) {
+        // Graceful fallback — a banner in the Connection tab will tell the user.
+        return 'mock';
+    }
+    return candidate;
+}
+
+export function persistTransportKind(kind) {
+    try { localStorage.setItem('idsnm.transport', kind); } catch {}
 }

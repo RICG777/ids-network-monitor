@@ -47,8 +47,8 @@ export class BaseTransport extends EventTarget {
         if (this.status === 'connected' || this.status === 'connecting') return;
         this._setState('connecting');
         try {
-            await this._connectImpl(opts);
-            this._setState('connected');
+            const extras = (await this._connectImpl(opts)) ?? {};
+            this._setState('connected', extras);
         } catch (err) {
             this._setState('error', { error: err?.message ?? String(err) });
             this._setState('disconnected');
