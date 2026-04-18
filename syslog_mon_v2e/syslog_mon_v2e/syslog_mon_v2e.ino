@@ -1,19 +1,25 @@
 // IDS Network Monitor - Syslog Relay Trigger + Ping Heartbeat (ESP32-EVB)
-// Version: 2f.1
-// Changes from v2e.3:
-//   - E3 scaffolding: UEXT jumper gate (GPIO 16 drive LOW, GPIO 13 INPUT_PULLUP,
-//     debounced, tamper-logged). Event ring buffer (64 entries) fed by logEvent().
-//     STATUS adds JUMPER and HEAP lines. No HTTP server yet — that arrives in v2f.2.
+// Version: 2f.2
+// Changes from v2f.1:
+//   - E3 Phase 2: HTTP server on port 80 (built-in WebServer). GET / serves a
+//     minimal landing page from PROGMEM; GET /api/status returns JSON mirroring
+//     the serial STATUS dump. Jumper-gated: /api/* returns 403 when jumper open.
+//     USB serial config remains fully available regardless of jumper state.
+//   - Requires ArduinoJson 7.x library.
+//   - Build with PartitionScheme=min_spiffs to keep OTA slots for future E7:
+//     arduino-cli compile --fqbn esp32:esp32:esp32-evb:PartitionScheme=min_spiffs ...
 
 #include <ETH.h>
 #include <NetworkUdp.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <WebServer.h>
+#include <ArduinoJson.h>
 #include <esp_bt.h>
 #include "ping/ping_sock.h"
 #include "lwip/inet.h"
 
-#define FIRMWARE_VERSION "2f.1"
+#define FIRMWARE_VERSION "2f.2"
 #define TEST_PULSE_MS    3000
 #define MODE_PULSE 0
 #define MODE_LATCH 1
@@ -43,6 +49,9 @@ bool ethConnected = false;
 IPAddress ip;
 IPAddress subnet(255, 255, 255, 0);
 IPAddress gateway(0, 0, 0, 0);
+
+// HTTP server (v2f.2) — handlers live in web_server.ino
+WebServer server(80);
 
 // Storage
 Preferences prefs;
@@ -175,6 +184,10 @@ void setup() {
             Serial.println(F(" targets."));
         }
     }
+
+    // HTTP server (v2f.2). Safe to start before Ethernet has an IP —
+    // WebServer binds INADDR_ANY and serves once the stack is up.
+    setupWebServer();
 
     logEvent(VERB_NORMAL, "Setup complete. Listening for syslog messages...");
 }
@@ -347,6 +360,9 @@ void sendStatus() {
 // ===================== MAIN LOOP =====================
 
 void loop() {
+    // Service HTTP first so browser clients don't queue behind ping/syslog.
+    tickWebServer();
+
     checkJumperPeriodic();
 
     if (Serial.available()) {
