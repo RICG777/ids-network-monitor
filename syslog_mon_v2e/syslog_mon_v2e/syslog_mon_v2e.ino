@@ -1,13 +1,14 @@
 // IDS Network Monitor - Syslog Relay Trigger + Ping Heartbeat (ESP32-EVB)
-// Version: 2f.2
-// Changes from v2f.1:
-//   - E3 Phase 2: HTTP server on port 80 (built-in WebServer). GET / serves a
-//     minimal landing page from PROGMEM; GET /api/status returns JSON mirroring
-//     the serial STATUS dump. Jumper-gated: /api/* returns 403 when jumper open.
-//     USB serial config remains fully available regardless of jumper state.
-//   - Requires ArduinoJson 7.x library.
-//   - Build with PartitionScheme=min_spiffs to keep OTA slots for future E7:
-//     arduino-cli compile --fqbn esp32:esp32:esp32-evb:PartitionScheme=min_spiffs ...
+// Version: 2f.3
+// Changes from v2f.2:
+//   - E3 Phase 3: full HTTP write API. Every serial command has an equivalent
+//     POST/DELETE endpoint under /api/. Network, verbosity, relay triggers/mode/
+//     duration/reset/test, ping config + targets + reset + clear. POSTs require
+//     Content-Type: application/json (light CSRF guard). Same jumper gating as
+//     v2f.2: /api/* returns 403 when jumper open.
+//   - USB serial config remains fully available regardless of jumper state.
+//   - Build: arduino-cli compile --fqbn esp32:esp32:esp32-evb:PartitionScheme=min_spiffs ...
+//   - Deps: ArduinoJson 7.x.
 
 #include <ETH.h>
 #include <NetworkUdp.h>
@@ -19,7 +20,7 @@
 #include "ping/ping_sock.h"
 #include "lwip/inet.h"
 
-#define FIRMWARE_VERSION "2f.2"
+#define FIRMWARE_VERSION "2f.3"
 #define TEST_PULSE_MS    3000
 #define MODE_PULSE 0
 #define MODE_LATCH 1
