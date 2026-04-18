@@ -135,10 +135,25 @@ void buildStatusJson(JsonDocument& doc) {
     }
 }
 
-// --- Read-only handlers ---
+// --- Embedded static assets (v2f.5) ---
 
-void handleRoot() {
-    server.send_P(200, "text/html; charset=utf-8", INDEX_HTML);
+// Shared handler: looks up the request URI against the EMBEDDED_ASSETS table
+// and streams the matching PROGMEM blob. Cache-Control keeps reloads cheap
+// without blocking updates (assets change only on re-flash).
+void handleEmbeddedAsset() {
+    String uri = server.uri();
+    for (size_t i = 0; i < EMBEDDED_ASSETS_COUNT; i++) {
+        const EmbeddedAsset& a = EMBEDDED_ASSETS[i];
+        if (uri == a.path) {
+            addCorsHeaders();
+            server.sendHeader("Cache-Control", "public, max-age=60");
+            server.send_P(200, a.mime, (const char*)a.data, a.size);
+            return;
+        }
+    }
+    // Shouldn't happen since we only register handlers for known paths,
+    // but guard anyway.
+    httpError(404, "not-found", uri.c_str());
 }
 
 void handleApiStatus() {
@@ -449,8 +464,7 @@ void setupWebServer() {
     const char* hdrs[] = { "Content-Type" };
     server.collectHeaders(hdrs, sizeof(hdrs) / sizeof(hdrs[0]));
 
-    // Reads
-    server.on("/",               HTTP_GET,    handleRoot);
+    // API routes — registered first so exact-match wins over asset paths.
     server.on("/api/status",     HTTP_GET,    handleApiStatus);
 
     // Network + verbosity
@@ -476,9 +490,15 @@ void setupWebServer() {
     server.on("/api/ping/reset",   HTTP_POST,   handleApiPingReset);
     server.on("/api/ping/clear",   HTTP_POST,   handleApiPingClear);
 
+    // Embedded static assets — HTML, CSS, JS, PNG. One handler per URL.
+    for (size_t i = 0; i < EMBEDDED_ASSETS_COUNT; i++) {
+        server.on(EMBEDDED_ASSETS[i].path, HTTP_GET, handleEmbeddedAsset);
+    }
+
     server.onNotFound(handleNotFound);
     server.begin();
-    logEvent(VERB_NORMAL, "Web server listening on port 80");
+    logEvent(VERB_NORMAL, "Web server listening on port 80 (%u embedded assets)",
+             (unsigned)EMBEDDED_ASSETS_COUNT);
 }
 
 void tickWebServer() {

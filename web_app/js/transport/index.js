@@ -17,22 +17,39 @@ export function createTransport({ kind = 'mock', ...opts } = {}) {
     }
 }
 
-// Resolve which transport to use from URL param or localStorage.
-// Falls back to 'mock' if the preferred transport isn't supported in this
-// browser, so the app is still usable on Firefox/Safari (Web Serial is
-// Chrome/Edge only).
+// Priority order for selecting the transport kind:
+//   1. ?transport= URL param (explicit override, always wins)
+//   2. Non-localhost HTTP origin -> 'http' (served from the board itself,
+//      v2f.5+). Means hitting http://<board>/ picks HTTP automatically,
+//      no URL params needed.
+//   3. localStorage idsnm.transport (last user choice).
+//   4. Web Serial if supported, else mock.
+//
+// The 'webserial' branch gracefully falls back to 'mock' if the browser
+// doesn't implement Web Serial (Firefox, Safari).
 export function pickTransportKind() {
     const params = new URLSearchParams(window.location.search);
     const fromUrl = params.get('transport');
-    const candidate = fromUrl
-        ?? (() => { try { return localStorage.getItem('idsnm.transport'); } catch { return null; } })()
-        ?? 'webserial';
-
-    if (candidate === 'webserial' && !WebSerialTransport.isSupported()) {
-        // Graceful fallback — a banner in the Connection tab will tell the user.
-        return 'mock';
+    if (fromUrl) {
+        if (fromUrl === 'webserial' && !WebSerialTransport.isSupported()) return 'mock';
+        return fromUrl;
     }
-    return candidate;
+
+    const host = window.location.hostname;
+    const isHttpProto = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+    const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '';
+    if (isHttpProto && !isLocalhost) {
+        return 'http';
+    }
+
+    let stored = null;
+    try { stored = localStorage.getItem('idsnm.transport'); } catch {}
+    if (stored) {
+        if (stored === 'webserial' && !WebSerialTransport.isSupported()) return 'mock';
+        return stored;
+    }
+
+    return WebSerialTransport.isSupported() ? 'webserial' : 'mock';
 }
 
 export function persistTransportKind(kind) {

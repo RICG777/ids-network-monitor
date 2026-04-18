@@ -4,7 +4,7 @@
 
 const state = {
     connection: { status: 'disconnected', transport: 'mock', portInfo: null, displayName: null },
-    firmware:   { version: null, expected: '2f.1', mismatch: false, mismatchDismissed: false },
+    firmware:   { version: null, expected: '2f.5', mismatch: false, mismatchDismissed: false },
     network:    { ip: null, subnet: null, gateway: null, mac: null },
     relay1:     { triggers: '', mode: null, duration: null, state: null },
     relay2:     { triggers: '', mode: null, duration: null, state: null },
